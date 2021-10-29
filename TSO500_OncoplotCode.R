@@ -193,20 +193,21 @@ left_ha = rowAnnotation("Pathways"=anno_text(genes_for_oncoplot$reason1,gp = gpa
 #             gp = gpar(fill = mutation_colors["Amp"], col = NA))
 # }
 col = mutation_colors
-onco_base_default <- oncoPrint(oncomat.plot, alter_fun = function(x, y, w, h, v) {
+onco_base_default <- oncoPrint(oncomat.plot,get_type = function(x) strsplit(x, ";")[[1]], alter_fun = function(x, y, w, h, v) {
   #print(v)
   n = sum(v)  # how many alterations for current gene in current sample
   h = h*0.9
   # use `names(which(v))` to correctly map between `v` and `col`
-  if(n) {grid.rect(x, y - h*0.5 + 1:n/n*h, w*0.9, 1/n*h,
+  if(n) {grid.rect(x, y - h*0.5 + 1:n/n*h, w*0.95, 1/n*h,
                   gp = gpar(fill = col[names(which(v))], col = NA), just = "top")}
   else
   {
-      grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+      grid.rect(x, y, w-unit(0.5, "mm"), h,
       gp = gpar(fill = "#CCCCCC", col = NA))
   }
 },
-                               col=mutation_colors, row_order=1:nrow(oncomat.plot),
+                               col=mutation_colors,
+                               row_order=1:nrow(oncomat.plot),
                                name="oncoplot",
                                column_order = sort(colnames(oncomat.plot)),
                                show_pct = F,
