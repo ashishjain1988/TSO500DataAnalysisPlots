@@ -192,7 +192,21 @@ left_ha = rowAnnotation("Pathways"=anno_text(genes_for_oncoplot$reason1,gp = gpa
 #   grid.rect(x, y, w-unit(0.25, "mm"), h*0.33,
 #             gp = gpar(fill = mutation_colors["Amp"], col = NA))
 # }
-onco_base_default <- oncoPrint(oncomat.plot, alter_fun = alter_fun, col=mutation_colors, row_order=1:nrow(oncomat.plot),
+col = mutation_colors
+onco_base_default <- oncoPrint(oncomat.plot, alter_fun = function(x, y, w, h, v) {
+  #print(v)
+  n = sum(v)  # how many alterations for current gene in current sample
+  h = h*0.9
+  # use `names(which(v))` to correctly map between `v` and `col`
+  if(n) {grid.rect(x, y - h*0.5 + 1:n/n*h, w*0.9, 1/n*h,
+                  gp = gpar(fill = col[names(which(v))], col = NA), just = "top")}
+  else
+  {
+      grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+      gp = gpar(fill = "#CCCCCC", col = NA))
+  }
+},
+                               col=mutation_colors, row_order=1:nrow(oncomat.plot),
                                name="oncoplot",
                                column_order = sort(colnames(oncomat.plot)),
                                show_pct = F,
@@ -205,7 +219,7 @@ onco_base_default <- oncoPrint(oncomat.plot, alter_fun = alter_fun, col=mutation
                                show_column_names = TRUE,
                                column_names_gp = gpar(fontsize = 20,fontface = 2),
                                column_names_rot = 0,
-                               alter_fun_is_vectorized = T,
+                               #alter_fun_is_vectorized = T),
                                row_names_gp = gpar(fontsize = 14),
                                heatmap_legend_param = list(title = "Alterations",title_gp = gpar(fontsize = 16, fontface = 2),labels_gp = gpar(fontsize = 14)))#,
 
@@ -227,113 +241,240 @@ dev.off()
 # custom.cn.data <- custom.cnv.data
 # custom.cn.data$Sample_name <-piMap[custom.cn.data$Sample_name]
 
+
+createOncoMatrix = function(m, g = NULL, chatty = TRUE, add_missing = FALSE){
+
+  if(is.null(g)){
+    stop("Please provde atleast two genes!")
+  }
+
+  subMaf = subsetMaf(maf = m, genes = g, includeSyn = FALSE, mafObj = FALSE)
+
+  if(nrow(subMaf) == 0){
+    if(add_missing){
+      numericMatrix = matrix(data = 0, nrow = length(g), ncol = length(levels(getSampleSummary(x = m)[,Tumor_Sample_Barcode])))
+      rownames(numericMatrix) = g
+      colnames(numericMatrix) = levels(getSampleSummary(x = m)[,Tumor_Sample_Barcode])
+
+      oncoMatrix = matrix(data = "", nrow = length(g), ncol = length(levels(getSampleSummary(x = m)[,Tumor_Sample_Barcode])))
+      rownames(oncoMatrix) = g
+      colnames(oncoMatrix) = levels(getSampleSummary(x = m)[,Tumor_Sample_Barcode])
+
+      vc = c("")
+      names(vc) = 0
+
+      return(list(oncoMatrix = oncoMatrix, numericMatrix = numericMatrix, vc = vc))
+    }else{
+      return(NULL)
+    }
+  }
+
+  if(add_missing){
+    subMaf[, Hugo_Symbol := factor(x = Hugo_Symbol, levels = g)]
+  }
+
+  cnv_events = c(c("Amp", "Del"), as.character(subMaf[Variant_Type == "CNV"][, .N, Variant_Classification][, Variant_Classification]))
+  cnv_events = unique(cnv_events)
+
+  oncomat = data.table::dcast(data = subMaf[,.(Hugo_Symbol, Variant_Classification, Tumor_Sample_Barcode)], formula = Hugo_Symbol ~ Tumor_Sample_Barcode,
+                              fun.aggregate = function(x, cnv = cnv_events){
+                                #x = unique(as.character(x)) #>=2 distinct variant classification = Multi_Hit
+                                x = as.character(x) # >= 2 same/distinct variant classification = Multi_Hit See #347
+                                xad = x[x %in% cnv]
+                                xvc = x[!x %in% cnv]
+
+                                if(length(xvc)>0){
+                                  xvc = ifelse(test = length(xvc) > 1, yes = paste(xvc,collapse = ";"), no = xvc)
+                                }
+
+                                x = ifelse(test = length(xad) > 0, yes = paste(xad, xvc, sep = ';'), no = xvc)
+                                x = gsub(pattern = ';$', replacement = '', x = x)
+                                x = gsub(pattern = '^;', replacement = '', x = x)
+                                return(x)
+                              } , value.var = 'Variant_Classification', fill = '', drop = FALSE)
+
+  #convert to matrix
+  data.table::setDF(oncomat)
+  rownames(oncomat) = oncomat$Hugo_Symbol
+  oncomat = as.matrix(oncomat[,-1, drop = FALSE])
+
+  variant.classes = as.character(unique(subMaf[,Variant_Classification]))
+  variant.classes = c('',variant.classes, 'Multi_Hit')
+  names(variant.classes) = 0:(length(variant.classes)-1)
+
+  #Complex variant classes will be assigned a single integer.
+  vc.onc = unique(unlist(apply(oncomat, 2, unique)))
+  vc.onc = vc.onc[!vc.onc %in% names(variant.classes)]
+  names(vc.onc) = rep(as.character(as.numeric(names(variant.classes)[length(variant.classes)])+1), length(vc.onc))
+  variant.classes2 = c(variant.classes, vc.onc)
+
+  oncomat.copy <- oncomat
+  #Make a numeric coded matrix
+  for(i in 1:length(variant.classes2)){
+    oncomat[oncomat == variant.classes2[i]] = names(variant.classes2)[i]
+  }
+
+  #If maf has only one gene
+  if(nrow(oncomat) == 1){
+    mdf  = t(matrix(as.numeric(oncomat)))
+    rownames(mdf) = rownames(oncomat)
+    colnames(mdf) = colnames(oncomat)
+    return(list(oncoMatrix = oncomat.copy, numericMatrix = mdf, vc = variant.classes))
+  }
+
+  #convert from character to numeric
+  mdf = as.matrix(apply(oncomat, 2, function(x) as.numeric(as.character(x))))
+  rownames(mdf) = rownames(oncomat.copy)
+
+
+  #If MAF file contains a single sample, simple sorting is enuf.
+  if(ncol(mdf) == 1){
+    sampleId = colnames(mdf)
+    mdf = as.matrix(mdf[order(mdf, decreasing = TRUE),])
+    colnames(mdf) = sampleId
+
+    oncomat.copy = as.matrix(oncomat.copy[rownames(mdf),])
+    colnames(oncomat.copy) = sampleId
+
+    return(list(oncoMatrix = oncomat.copy, numericMatrix = mdf, vc = variant.classes))
+  } else{
+    #Sort by rows as well columns if >1 samples present in MAF
+    #Add total variants per gene
+    mdf = cbind(mdf, variants = apply(mdf, 1, function(x) {
+      length(x[x != "0"])
+    }))
+    #Sort by total variants
+    mdf = mdf[order(mdf[, ncol(mdf)], decreasing = TRUE), ]
+    #colnames(mdf) = gsub(pattern = "^X", replacement = "", colnames(mdf))
+    nMut = mdf[, ncol(mdf)]
+
+    mdf = mdf[, -ncol(mdf)]
+
+    mdf.temp.copy = mdf #temp copy of original unsorted numeric coded matrix
+
+    mdf[mdf != 0] = 1 #replacing all non-zero integers with 1 improves sorting (& grouping)
+    tmdf = t(mdf) #transposematrix
+    mdf = t(tmdf[do.call(order, c(as.list(as.data.frame(tmdf)), decreasing = TRUE)), ]) #sort
+
+    mdf.temp.copy = mdf.temp.copy[rownames(mdf),] #organise original matrix into sorted matrix
+    mdf.temp.copy = mdf.temp.copy[,colnames(mdf)]
+    mdf = mdf.temp.copy
+
+    #organise original character matrix into sorted matrix
+    oncomat.copy <- oncomat.copy[,colnames(mdf)]
+    oncomat.copy <- oncomat.copy[rownames(mdf),]
+
+    return(list(oncoMatrix = oncomat.copy, numericMatrix = mdf, vc = variant.classes, cnvc = cnv_events))
+  }
+}
+
 ### List defining functions for color and shape of cells in oncoplot
-alter_fun = list(
-  background = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = "#CCCCCC", col = NA))
-  },
-  # "0" = function(x, y, w, h) {
-  #   grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-  #             gp = gpar(fill = "#CCCCCC", col = NA))
-  # },
-  "Nonsense Mutation" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = mutation_colors["Nonsense Mutation"], col = NA))
-  },
-  "Missense Mutation" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = mutation_colors["Missense Mutation"], col = NA))
-  },
-  "Frame Shift Del" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = mutation_colors["Frame Shift Del"], col = NA))
-  },
-  "In Frame Ins" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = mutation_colors["In Frame Ins"], col = NA))
-  },
-  "Splice Site" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = mutation_colors["Splice Site"], col = NA))
-  },
-  "Multi Hit" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = mutation_colors["Multi Hit"], col = NA))
-  },
-  "Frame Shift Ins" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = mutation_colors["Frame Shift Ins"], col = NA))
-  },
-  "In Frame Del" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = mutation_colors["In Frame Del"], col = NA))
-  },
-  "Nonstop Mutation" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = mutation_colors["Nonstop Mutation"], col = NA))
-  },
-  "Translation Start Site" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = mutation_colors["Translation Start Site"], col = NA))
-  },
-  "Duplication" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.25, "mm"), h*0.33,
-              gp = gpar(fill = mutation_colors["Duplication"], col = NA))
-  },
-  "Del" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.25, "mm"), h*0.33,
-              gp = gpar(fill = mutation_colors["Del"], col = NA))
-  },
-  "no variants" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              # gp = gpar(fill = "#e0e0e0", col = NA))
-              gp = gpar(fill = "#CCCCCC", col = NA))
-  },
-  "Pathogenic" = function(x, y, w, h) {
-    # grid.points(x, y, pch = 18, size=w, gp=gpar(col=col["pathogenic"]))
-    # grid.rect(x, y, w*0.7, h*0.2,
-    #           gp = gpar(fill = col["pathogenic"], col = NA))
-    # grid.rect(x, y, w*0.1, h*0.7,
-    #           gp = gpar(fill = col["pathogenic"], col = NA))
-    grid.rect(x, y, w*0.8, h*0.8,
-              gp = gpar(col = mutation_colors["Pathogenic"], fill = NA, lwd=5))
-  },
-  "VUS" = function(x, y, w, h) {
-    # grid.points(x, y, pch = 3, size=w,gp=gpar(col=col["VUS"], lwd=3))
-    # grid.rect(x, y, w*0.2, h-unit(0.5, "mm"),
-    #           gp = gpar(fill = col["VUS"], col = NA))
-    grid.rect(x, y, w*0.8, h*0.8,
-              gp = gpar(col = mutation_colors["VUS"], fill = NA, lwd=5))
-  }
-  ,
-  "Splicing UTR5" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = mutation_colors["Splicing UTR5"], col = NA))
-  }
-  ,
-  "FS Substitution" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = mutation_colors["FS Substitution"], col = NA))
-  }
-  ,
-  "Non FS Substitution" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = mutation_colors["Non FS Substitution"], col = NA))
-  }
-  ,
-  "Splicing" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = mutation_colors["Splicing"], col = NA))
-  }
-  ,
-  "SNV" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = mutation_colors["SNV"], col = NA))
-  }
-  ,
-  "Stopgain" = function(x, y, w, h) {
-    grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
-              gp = gpar(fill = mutation_colors["Stopgain"], col = NA))
-  }
-)
+# alter_fun = list(
+#   background = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = "#CCCCCC", col = NA))
+#   },
+#   # "0" = function(x, y, w, h) {
+#   #   grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#   #             gp = gpar(fill = "#CCCCCC", col = NA))
+#   # },
+#   "Nonsense Mutation" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = mutation_colors["Nonsense Mutation"], col = NA))
+#   },
+#   "Missense Mutation" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = mutation_colors["Missense Mutation"], col = NA))
+#   },
+#   "Frame Shift Del" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = mutation_colors["Frame Shift Del"], col = NA))
+#   },
+#   "In Frame Ins" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = mutation_colors["In Frame Ins"], col = NA))
+#   },
+#   "Splice Site" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = mutation_colors["Splice Site"], col = NA))
+#   },
+#   "Multi Hit" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = mutation_colors["Multi Hit"], col = NA))
+#   },
+#   "Frame Shift Ins" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = mutation_colors["Frame Shift Ins"], col = NA))
+#   },
+#   "In Frame Del" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = mutation_colors["In Frame Del"], col = NA))
+#   },
+#   "Nonstop Mutation" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = mutation_colors["Nonstop Mutation"], col = NA))
+#   },
+#   "Translation Start Site" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = mutation_colors["Translation Start Site"], col = NA))
+#   },
+#   "Duplication" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.25, "mm"), h*0.33,
+#               gp = gpar(fill = mutation_colors["Duplication"], col = NA))
+#   },
+#   "Del" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.25, "mm"), h*0.33,
+#               gp = gpar(fill = mutation_colors["Del"], col = NA))
+#   },
+#   "no variants" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               # gp = gpar(fill = "#e0e0e0", col = NA))
+#               gp = gpar(fill = "#CCCCCC", col = NA))
+#   },
+#   "Pathogenic" = function(x, y, w, h) {
+#     # grid.points(x, y, pch = 18, size=w, gp=gpar(col=col["pathogenic"]))
+#     # grid.rect(x, y, w*0.7, h*0.2,
+#     #           gp = gpar(fill = col["pathogenic"], col = NA))
+#     # grid.rect(x, y, w*0.1, h*0.7,
+#     #           gp = gpar(fill = col["pathogenic"], col = NA))
+#     grid.rect(x, y, w*0.8, h*0.8,
+#               gp = gpar(col = mutation_colors["Pathogenic"], fill = NA, lwd=5))
+#   },
+#   "VUS" = function(x, y, w, h) {
+#     # grid.points(x, y, pch = 3, size=w,gp=gpar(col=col["VUS"], lwd=3))
+#     # grid.rect(x, y, w*0.2, h-unit(0.5, "mm"),
+#     #           gp = gpar(fill = col["VUS"], col = NA))
+#     grid.rect(x, y, w*0.8, h*0.8,
+#               gp = gpar(col = mutation_colors["VUS"], fill = NA, lwd=5))
+#   }
+#   ,
+#   "Splicing UTR5" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = mutation_colors["Splicing UTR5"], col = NA))
+#   }
+#   ,
+#   "FS Substitution" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = mutation_colors["FS Substitution"], col = NA))
+#   }
+#   ,
+#   "Non FS Substitution" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = mutation_colors["Non FS Substitution"], col = NA))
+#   }
+#   ,
+#   "Splicing" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = mutation_colors["Splicing"], col = NA))
+#   }
+#   ,
+#   "SNV" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = mutation_colors["SNV"], col = NA))
+#   }
+#   ,
+#   "Stopgain" = function(x, y, w, h) {
+#     grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"),
+#               gp = gpar(fill = mutation_colors["Stopgain"], col = NA))
+#   }
+# )
