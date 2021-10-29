@@ -7,303 +7,225 @@ library(fs)
 library(stringr)
 library(maftools)
 
-
-###########Figure 3A##################
-###CNV data format
-cnvs<-read.table("~/Downloads/CNV data for case6-5152.txt",sep=",",header = TRUE)
-custom.cnv.data = data.frame(Gene = cnvs$Gene,Sample_name = cnvs$Patient.ID,CN = cnvs$Dup.del,stringsAsFactors = FALSE)
-custom.cnv.data$CN[custom.cnv.data$CN == "DUP"]<-"Duplication"
-
 #SNV data format
+xl_file="~/Downloads/Landscape of somatic alterations in FCL-LFGT..relevant genes for oncoplot (1).xlsx"
+oncoplot_data <- openxlsx::read.xlsx(xl_file, sheet="fake_maf")
 snvs<-openxlsx::read.xlsx("~/Downloads/Landscape of somatic alterations in FCL-LFGT..relevant genes for oncoplot.xlsx",sheet = 1)
 patientCaseMapping<-unique(snvs[,c(2,4)])
 piMap<-patientCaseMapping$Case.number
 names(piMap)<-patientCaseMapping$Patient.ID
+oncoplot_data$Variant_Classification[oncoplot_data$Variant_Classification == "(splicing;UTR5)"]<-"Splicing UTR5"
+oncoplot_data$Variant_Classification[oncoplot_data$Variant_Classification == "(splicing)"]<-"Splicing"
+oncoplot_data$Variant_Classification[oncoplot_data$Variant_Classification == "FS substitution"]<-"FS Substitution"
+oncoplot_data$Variant_Classification[oncoplot_data$Variant_Classification == "nonFS substitution"]<-"Non FS Substitution"
+oncoplot_data$Variant_Classification[oncoplot_data$Variant_Classification == "stopgain"]<-"Stopgain"
+mutation_colors <- c("Splicing_UTR5"="#ad7aff",Missense_Mutation="black",SNV="#377EB8","FS_Substitution"="#4DAF4A","Non_FS_Substitution"="#ff008c",Splicing="#FF7F00",Stopgain="#A65628",Multi_Hit="#FFFF33",Duplication="#5abad8",Del="darkred",no_variants="#d6d6d6", Pathogenic="black",VUS="grey50")
+names(mutation_colors) <- gsub("_"," ",names(mutation_colors))
+variant_types <- names(mutation_colors)
+oncoplot_data$Tumor_Sample_Barcode<-piMap[oncoplot_data$Tumor_Sample_Barcode]
+#mymaf <- read.maf(oncoplot_data, vc_nonSyn=variant_types)
 
-dataForCbioportal<-data.frame(Sample_ID=piMap[snvs$Patient.ID],Cancer_Type=rep("PCFCL",nrow(snvs)),Chromosome=snvs$Chr,Start_Position=snvs$Start,End_Position=snvs$End,Reference_Allele=snvs$Ref,Variant_Allele=snvs$Alt)
-write.table(dataForCbioportal,"~/Downloads/landscape.cbioportal.tsv",sep = "\t",row.names = FALSE,col.names = TRUE,quote = F)
-# shortMAF<-data.frame(Chromosome=snvs$Chr,Start_Position=snvs$Start,Reference_Allele=snvs$Ref,Tumor_Seq_Allele2=snvs$Alt,Tumor_Sample_Barcode=piMap[snvs$Patient.ID],Hugo_Symbol=snvs$Gene)
-# write.table(shortMAF,"~/Downloads/landscape.maf",sep = "\t",row.names = FALSE,col.names = TRUE,quote = F)
-# snvsVEP104<-read.maf("~/Downloads/landscape.vep.maf")
-custom.snv.data <- data.frame(Gene = snvs$Gene,Sample_name = snvs$Patient.ID,CN = snvs$Exonic.function,stringsAsFactors = FALSE)
-custom.snv.data$CN[custom.snv.data$CN == "(splicing;UTR5)"]<-"Splicing_UTR5"
-custom.snv.data$CN[custom.snv.data$CN == "(splicing)"]<-"Splicing"
-custom.snv.data$CN[custom.snv.data$CN == "FS substitution"]<-"FS_Substitution"
-custom.snv.data$CN[custom.snv.data$CN == "nonFS substitution"]<-"Non_FS_Substitution"
-custom.snv.data$CN[custom.snv.data$CN == "stopgain"]<-"Stopgain"
-custom.cn.data<-rbind(custom.cnv.data,custom.snv.data)
-patientCaseMapping<-unique(snvs[,c(2,4)])
-piMap<-patientCaseMapping$Case.number
-names(piMap)<-patientCaseMapping$Patient.ID
-custom.cn.data$Sample_name <-piMap[custom.cn.data$Sample_name]
-# custom.cn.data <- custom.cnv.data
-# custom.cn.data$Sample_name <-piMap[custom.cn.data$Sample_name]
+###CNV data format
+cnvs<-read.table("~/Downloads/CNV data for case6-5152.txt",sep=",",header = TRUE)
+custom.cnv.data = data.frame(Gene = cnvs$Gene,Sample_name = cnvs$Patient.ID,CN = cnvs$Dup.del,stringsAsFactors = FALSE)
+custom.cnv.data$CN[custom.cnv.data$CN == "DUP"]<-"Duplication"
+custom.cnv.data$Sample_name <-piMap[custom.cnv.data$Sample_name]
 
-##Pathway Information
-# pathdb <- system.file("extdata", "oncogenic_sig_patwhays.tsv", package = "maftools")
-# pathdb = data.table::fread(input = pathdb)
-# #pathdb_size = pathdb[,.N,Pathway]
-# pathdb = split(pathdb, as.factor(pathdb$Pathway))
-# pathdbDF<-do.call("rbind",pathdb)
-
-# library(msigdbr)
-# m_df = msigdbr(species = "Homo sapiens", category="C2",subcat="REACTOME")
-# m_df = m_df[m_df$gene_symbol %in% custom.cn.data$Gene,]
-#
-# pathwayGeneCount <- pathwayGeneCount[pathwayGeneCount$gs_name %in% m_df$gs_name,] %>% dplyr::arrange(gs_name)
-# topPathways<-(m_df %>% dplyr::group_by_at(vars(gs_name)) %>% dplyr::summarize(gs_name=unique(gs_name),NoOfGenes = dplyr::n()) %>% arrange(desc(gs_name)))
-# foldChangePath<-topPathways$NoOfGenes/pathwayGeneCount$NoOfGenes
-# names(foldChangePath)<-topPathways$gs_name
-# top10<-names(sort(foldChangePath,decreasing = TRUE))[1:10]
-# m_df = m_df[m_df$gs_name %in% top10,]
-
-pathwayAnnot<-openxlsx::read.xlsx("~/Downloads/PathwayInformation.xlsx",sheet = 1)
-pathwayAnnot$Gene<-trimws(pathwayAnnot$Gene)
-pathwayAnnot1<-merge(data.frame(Gene=custom.cn.data$Gene),pathwayAnnot,by="Gene",all.x=TRUE)
-pathwayAnnot1$Pathway[is.na(pathwayAnnot1$Pathway)]<-"Other"
-
-f<-openxlsx::read.xlsx("~/Downloads/Landscape of somatic alterations in FCL-LFGT..relevant genes for oncoplot.xlsx",sheet = 2)[1:9,]
+##Load clinical features
+f<-openxlsx::read.xlsx("~/Downloads/Landscape of somatic alterations in FCL-LFGT..relevant genes for oncoplot.xlsx", sheet=2)[1:9,]
 clinicalFeatures<-data.frame(Tumor_Sample_Barcode=f$Case.number,IG_Gene_Rearr=trimws(f$IG),BCL2=f$`BCL2.t(14;18)`)
-o1<-load(file = paste0("/Users/jaina13/myPART/WESData/Pipeliner_somaticpairs/merged_somatic/SNVsResults-new.rda"))
-wesSNVs<-l1$Adrenocortical.carcinoma
-wesSNVs@data$Tumor_Sample_Barcode<-"1"
+maf.filtered = read.maf(maf = oncoplot_data,cnTable = custom.cnv.data,clinicalData = clinicalFeatures,verbose = FALSE,vc_nonSyn=variant_types)
 
-maf.plus.cn = read.maf(maf = wesSNVs@data[ wesSNVs@data$Hugo_Symbol== "HTR1D",],cnTable = custom.cn.data,clinicalData = clinicalFeatures,verbose = FALSE)
-
-#source("/Users/jaina13/myPART/MyPART-Analysis/RScripts/Figure3A-helper.R")
-sample_annotation_data<-maf.plus.cn@clinical.data[,c("Tumor_Sample_Barcode","IG_Gene_Rearr","BCL2")]
+##Colors for clinical annotations
+clin_data<-maf.filtered@clinical.data[,c("Tumor_Sample_Barcode","IG_Gene_Rearr","BCL2")]
 IG_Gene_RearrColor <- c("#78DD9E","#A54EE1","#D2B4C8")
 names(IG_Gene_RearrColor)<-c("Clonal","Indeterminate","Polyclonal")
 BCL2_color<-c("brown")
 names(BCL2_color)<-c("Neg")
-sample_annotation_colors <- list(IG_Gene_Rearr=IG_Gene_RearrColor,BCL2=BCL2_color)
+clin_data_colors <- list(IG_Gene_Rearr=IG_Gene_RearrColor,BCL2=BCL2_color)
 
-g<-make_oncoplot(maf.plus.cn,show_sample_names = TRUE,clin_data = sample_annotation_data,clin_data_colors = sample_annotation_colors,ngene_max = 62)
-pdf(paste0("~/Downloads/Anu-TSO500.pdf"),width = 14,height = 12)
-#ComplexHeatmap::draw(g, show_annotation_legend = TRUE)
-draw(g, show_annotation_legend = TRUE)
-dev.off()
+##Loading pathway information
+pathwayAnnot<-openxlsx::read.xlsx("~/Downloads/PathwayInformation.xlsx",sheet = 1)
+pathwayAnnot$Gene<-trimws(pathwayAnnot$Gene)
+pathwayAnnot1<-merge(data.frame(Gene=maf.filtered@data$Hugo_Symbol),pathwayAnnot,by="Gene",all.x=TRUE)
+pathwayAnnot1$Pathway[is.na(pathwayAnnot1$Pathway)]<-"Other"
 
 
+###Code to plot oncoplot for TSO500 data
+require(ComplexHeatmap)
+### Structure info about the fraction of the cohort that has each gene mutated
+frac_mut <- data.frame(Hugo_Symbol=maf.filtered@gene.summary$Hugo_Symbol,
+                       frac_mut=(maf.filtered@gene.summary$AlteredSamples/as.numeric(maf.filtered@summary$summary[3])),
+                       #mutation_count=maf.filtered@gene.summary$total + maf.filtered@gene.summary$CNV_total,
+                       mutation_count=maf.filtered@gene.summary$total,
+                       #mutation_count=maf.filtered@gene.summary$CNV_total,
+                       stringsAsFactors = F)
 
-make_oncoplot <- function(maf.filtered, cohort_freq_thresh = 0.01,ngene_max=25, auto_adjust_threshold=T,
-                          oncomat_only=F, show_sample_names=NULL,
-                          clin_data=NULL, clin_data_colors=NULL,
-                          savename=NULL) {
+frac_mut <- frac_mut %>% dplyr::filter(!(Hugo_Symbol %in% c("HLA-A","HLA-B","HLA-C")))
+#frac_mut <- frac_mut %>% dplyr::filter(!(Hugo_Symbol %in% c("HLA-A","HLA-B","HLA-C")) & (mutation_count > 1))
 
-  maf.filtered = maf.plus.cn
-  clin_data=sample_annotation_data
-  clin_data_colors=sample_annotation_colors
-  cohort_freq_thresh = 0.01
-  oncomat_only=F
-  show_sample_names=TRUE
-  auto_adjust_threshold=T
-  ngene_max=62
+ngene_max=100
+target_frac = sort(frac_mut$frac_mut, decreasing = T)[min(ngene_max,nrow(frac_mut))]
+cohort_freq_thresh = 0.01
+cohort_freq_thresh <- max(c(cohort_freq_thresh,target_frac))
+### Select genes based on the frequency threshold
+#frac_mut <- frac_mut[order(frac_mut$frac_mut,frac_mut$mutation_count,decreasing = T),]
+frac_mut <- frac_mut[order(frac_mut$frac_mut,decreasing = T),]
+freq_genes <- frac_mut$Hugo_Symbol[frac_mut$frac_mut >= cohort_freq_thresh]
+freq_genes <- freq_genes[1:min(ngene_max,length(freq_genes))]
+if (length(freq_genes) == 0) {
+  stop("No genes to plot; change the frequency threshold to include more genes.")
+}
+if (length(freq_genes) > 100) {
+  target_frac = round(sort(frac_mut$frac_mut, decreasing = T)[min(ngene_max,nrow(frac_mut))],2)
+  # stop(paste0("Too many genes for oncoplot. Trying setting the cohort mutated fraction to > ", target_frac))
+  warning(paste0("Too many genes for oncoplot. Trying setting the cohort mutated fraction to > ", target_frac))
+  # return(NA)
+}
+gene_list <- list(freq_genes)
+reasons <- paste0("Cohort Freq > ",round(cohort_freq_thresh,digits = 3))
 
-  require(ComplexHeatmap)
-
-  ### Structure info about the fraction of the cohort that has each gene mutated
-  frac_mut <- data.frame(Hugo_Symbol=maf.filtered@gene.summary$Hugo_Symbol,
-                         frac_mut=(maf.filtered@gene.summary$AlteredSamples/as.numeric(maf.filtered@summary$summary[3])),
-                         #mutation_count=maf.filtered@gene.summary$total + maf.filtered@gene.summary$CNV_total,
-                         mutation_count=maf.filtered@gene.summary$total,
-                         #mutation_count=maf.filtered@gene.summary$CNV_total,
-                         stringsAsFactors = F)
-
-  frac_mut <- frac_mut %>% dplyr::filter(!(Hugo_Symbol %in% c("HLA-A","HLA-B","HLA-C","HTR1D")))
-  #frac_mut <- frac_mut %>% dplyr::filter(!(Hugo_Symbol %in% c("HLA-A","HLA-B","HLA-C")) & (mutation_count > 1))
-
-  target_frac = sort(frac_mut$frac_mut, decreasing = T)[min(ngene_max,nrow(frac_mut))]
-  if (auto_adjust_threshold) {
-    cohort_freq_thresh <- max(c(cohort_freq_thresh,target_frac))
+### Collect genes to plot
+genes_for_oncoplot <- data.frame(Hugo_Symbol=c(), reason=c())
+for (i in 1:length(gene_list)) {
+  if (is.na(gene_list[[i]][1])) {
+    next
   }
-  ### Select genes based on the frequency threshold
-  #frac_mut <- frac_mut[order(frac_mut$frac_mut,frac_mut$mutation_count,decreasing = T),]
-  frac_mut <- frac_mut[order(frac_mut$frac_mut,decreasing = T),]
-  freq_genes <- frac_mut$Hugo_Symbol[frac_mut$frac_mut >= cohort_freq_thresh]
-  freq_genes <- freq_genes[1:min(ngene_max,length(freq_genes))]
-  if (length(freq_genes) == 0) {
-    stop("No genes to plot; change the frequency threshold to include more genes.")
-  }
-  if (length(freq_genes) > 100) {
-    target_frac = round(sort(frac_mut$frac_mut, decreasing = T)[min(ngene_max,nrow(frac_mut))],2)
-    # stop(paste0("Too many genes for oncoplot. Trying setting the cohort mutated fraction to > ", target_frac))
-    warning(paste0("Too many genes for oncoplot. Trying setting the cohort mutated fraction to > ", target_frac))
-    # return(NA)
-  }
-  gene_list <- list(freq_genes)
-  reasons <- paste0("Cohort Freq > ",round(cohort_freq_thresh,digits = 3))
+  genes_for_oncoplot <- rbind(genes_for_oncoplot,
+                              data.frame(Hugo_Symbol=gene_list[[i]],
+                                         reason=reasons[i]))
+}
+genes_for_oncoplot <- cbind(genes_for_oncoplot,
+                            frac=frac_mut$frac_mut[match(genes_for_oncoplot$Hugo_Symbol, frac_mut$Hugo_Symbol)],
+                            reason1=pathwayAnnot1$Pathway[match(genes_for_oncoplot$Hugo_Symbol, pathwayAnnot1$Gene)])
 
-  ### Collect genes to plot
-  genes_for_oncoplot <- data.frame(Hugo_Symbol=c(), reason=c())
-  for (i in 1:length(gene_list)) {
-    if (is.na(gene_list[[i]][1])) {
-      next
-    }
-    genes_for_oncoplot <- rbind(genes_for_oncoplot,
-                                data.frame(Hugo_Symbol=gene_list[[i]],
-                                           reason=reasons[i]))
-  }
-  genes_for_oncoplot <- cbind(genes_for_oncoplot,
-                              frac=frac_mut$frac_mut[match(genes_for_oncoplot$Hugo_Symbol, frac_mut$Hugo_Symbol)],
-                              reason1=pathwayAnnot1$Pathway[match(genes_for_oncoplot$Hugo_Symbol, pathwayAnnot1$Gene)])
+genes_for_oncoplot <- genes_for_oncoplot[order(genes_for_oncoplot$reason1, -genes_for_oncoplot$frac),]
+# browser()
+### Split the oncoplot based on the reason for picking the gene
+###   Here, we're only picked based on the frequency
+###   But this framework is useful for plotting genes picked using various criteria
+split_idx=genes_for_oncoplot$reason1
+split_colors <- rainbow(length(unique(split_idx)))
+# names(split_colors) <- as.character(genes_for_oncoplot$reason[!duplicated(genes_for_oncoplot$reason)])
+names(split_colors) <- unique(split_idx)
+split_colors <- list(Reason=split_colors)
+split_idx <- as.factor(split_idx)
+split_idx<-factor(split_idx,levels=c("Immune modulation","Chromatin remodeling","Apoptosis","Cell Growth/differentiation",
+                                     "JAK-STAT pathway","Ras-MAPK/Ras-PI3K pathways","Other signaling pathways","Cell cycle/cytoskeleton","Transcription factor","B-cell development","Other"))
 
-  genes_for_oncoplot <- genes_for_oncoplot[order(genes_for_oncoplot$reason1, -genes_for_oncoplot$frac),]
-  # browser()
-  ### Split the oncoplot based on the reason for picking the gene
-  ###   Here, we're only picked based on the frequency
-  ###   But this framework is useful for plotting genes picked using various criteria
-  split_idx=genes_for_oncoplot$reason1
-  split_colors <- rainbow(length(unique(split_idx)))
-  # names(split_colors) <- as.character(genes_for_oncoplot$reason[!duplicated(genes_for_oncoplot$reason)])
-  names(split_colors) <- unique(split_idx)
-  split_colors <- list(Reason=split_colors)
-  split_idx <- as.factor(split_idx)
-  split_idx<-factor(split_idx,levels=c("Immune modulation","Chromatin remodeling","Apoptosis","Cell Growth/differentiation",
-                                        "JAK-STAT pathway","Ras-MAPK/Ras-PI3K pathways","Other signaling pathways","Cell cycle/cytoskeleton","Transcription factor","B-cell development","Other"))
+# source("scripts/helper_functions.oncoplot.R")
+### Make matrix to plot, and order it correctly
+#print(genes_for_oncoplot$Hugo_Symbol)
+oncomat <- createOncoMatrix(maf.filtered, g=genes_for_oncoplot$Hugo_Symbol, add_missing = F)$oncoMatrix
+oncomat <- oncomat[match(genes_for_oncoplot$Hugo_Symbol,rownames(oncomat)), ]
+onco_genes <- rownames(oncomat)
+oncomat.plot <- oncomat
 
-  # source("scripts/helper_functions.oncoplot.R")
-  ### Make matrix to plot, and order it correctly
-  #print(genes_for_oncoplot$Hugo_Symbol)
-  oncomat <- createOncoMatrix(maf.filtered, g=genes_for_oncoplot$Hugo_Symbol, add_missing = F)$oncoMatrix
-  oncomat <- oncomat[match(genes_for_oncoplot$Hugo_Symbol,rownames(oncomat)), ]
-  onco_genes <- rownames(oncomat)
-
-  if (oncomat_only) {
-    return(oncomat)
-  }
-  oncomat.plot <- oncomat
-
-  ### Set the height of the plot based on number of genes
-  onco_height=NULL
-  if (is.null(onco_height)) {
-    onco_height=max(round(0.2*nrow(oncomat.plot),0),5)
-  }
-
-  ### Make the mutation type names prettier by removing the underscore
-  # my_mut_col <- mutation_colors
-  # names(mutation_colors) <- gsub("_"," ",names(mutation_colors))
-  oncomat.plot <- gsub("_"," ",oncomat.plot)
-  # browser()
-  if (length(oncomat.plot) < 1) {
-    stop("No samples to plot.")
-  }
-  ### Column labels get cluttered if too many samples
-  if (!is.logical(show_sample_names)) {
-    show_sample_names=T
-    if (ncol(oncomat.plot) > 20) {
-      show_sample_names=F
-    }
-  }
-
-  myanno=NULL
-  if (!is.null(clin_data)) {
-    # browser()
-    anno_data <- data.frame(clin_data[match(colnames(oncomat.plot), clin_data$Tumor_Sample_Barcode),],stringsAsFactors = F)
-    row.names(anno_data) <- anno_data$Tumor_Sample_Barcode
-    anno_data <- anno_data[,!colnames(anno_data) %in% "Tumor_Sample_Barcode", drop=F]
-    if (ncol(anno_data) > 0) {
-      ###Make changes in the text for the annotation
-      colnames(anno_data)<-c("IG Gene\nRearrangement","BCL2 rearrangement\nby FISH")
-      myanno <- HeatmapAnnotation(df=anno_data,col = list("IG Gene\nRearrangement"=clin_data_colors$IG_Gene_Rearr,"BCL2 rearrangement\nby FISH"=clin_data_colors$BCL2),
-                                  simple_anno_size = unit(10, "mm"),
-                                  annotation_name_gp =  gpar(fontsize = 12,fontface = 2),
-                                  annotation_legend_param=list(labels_gp = gpar(fontsize = 14),title_gp = gpar(fontsize = 16, fontface = 2),
-                                                               nrow = 4,
-                                                               legend_direction = "vertical"))
-    }
-  }
-
-  ## Show total burden for top annotation
-  variant_type_data <- data.frame(maf.filtered@variant.classification.summary)
-  rownames(variant_type_data) <- variant_type_data$Tumor_Sample_Barcode
-  colnames(variant_type_data) <- gsub("_"," ",colnames(variant_type_data))
-  #variant_type_data <- variant_type_data[,c(-1,-ncol(variant_type_data))]
-  variant_type_data <- variant_type_data[,!names(variant_type_data)%in%c("Tumor Sample Barcode","total","CNV total")]
-  variant_type_data <- variant_type_data[match(colnames(oncomat.plot), rownames(variant_type_data)),
-                                         rev(order(colSums(variant_type_data)))]
-  # browser()
-  var_anno_colors <- mutation_colors[match(colnames(variant_type_data), names(mutation_colors))]
-  ###Make changes in the text/data for the top mutation histogram
-  # top_ha = HeatmapAnnotation("# of Mutations" = anno_barplot(variant_type_data, gp = gpar(fill = var_anno_colors), border = F,rot=90,height = unit(4, "cm")),
-  #                            #"Samples" = anno_text(sort(colnames(oncomat.plot)),rot=0),
-  #                            annotation_name_side = "left",annotation_name_gp = gpar(fontsize = 12),gap=unit(1,"mm"))
-  top_ha = HeatmapAnnotation("TMB (Mut/MB)" = anno_barplot(f$TMB[as.numeric(rownames(variant_type_data))], gp = gpar(fill = "mediumorchid4"), border = F,rot=90,height = unit(4, "cm")),
-                             #"Samples" = anno_text(sort(colnames(oncomat.plot)),rot=0),
-                             annotation_name_side = "left",annotation_name_gp = gpar(fontsize = 12),gap=unit(1,"mm"))
-
-  # browser()
-
-  pct_anno <- paste0(prettyNum(frac_mut$frac_mut[match(onco_genes, frac_mut$Hugo_Symbol)]*100,digits=1),"%")
-  OG_TSG_DF1<-data.frame(Gene=onco_genes)
-  OG_TSG_DF <- merge(OG_TSG_DF1,pathdbDF,by="Gene",all.x=TRUE)
-  OG_TSG_DF$Pathway[is.na(OG_TSG_DF$Pathway)]<-"NA"
-  OG_TSG_DF$OG_TSG[is.na(OG_TSG_DF$OG_TSG)]<-"NA"
-  oncogene_anno <- paste0(OG_TSG_DF$OG_TSG[match(onco_genes, OG_TSG_DF$Gene)])
-  #left_ha = rowAnnotation("Oncogene"=anno_text(oncogene_anno,gp = gpar(fontsize = 12)),"Cohort Pct"=anno_text(pct_anno,gp = gpar(fontsize = 12)), show_annotation_name=F,gap=unit(1,"mm"))
-  right_ha = rowAnnotation("% Mutated Sample"=anno_text(pct_anno,gp = gpar(fontsize = 14)), show_annotation_name=TRUE,gap=unit(1,"mm"))
-  #row.names(oncomat.plot)<-paste0(row.names(oncomat.plot)," (",pct_anno,")")
-  left_ha = rowAnnotation("Pathways"=anno_text(genes_for_oncoplot$reason1,gp = gpar(fontsize = 12),just = "left"), show_annotation_name=TRUE)
-  #pathwayAnnotation <- rowAnnotation(month = anno_text(month.name[1:10], just = "center",location = unit(0.5, "npc"), show_name = TRUE),annotation_name_rot = 0)
-
-  # print(oncomat.plot)
-  ### Make the oncoplot
-  # alter_fun$Deletion<-function(x, y, w, h) {
-  #   grid.rect(x, y, w-unit(0.25, "mm"), h*0.33,
-  #             gp = gpar(fill = mutation_colors["Del"], col = NA))
-  # }
-  # alter_fun$Amplification<-function(x, y, w, h) {
-  #   grid.rect(x, y, w-unit(0.25, "mm"), h*0.33,
-  #             gp = gpar(fill = mutation_colors["Amp"], col = NA))
-  # }
-  onco_base_default <- oncoPrint(oncomat.plot, alter_fun = alter_fun, col=mutation_colors, row_order=1:nrow(oncomat.plot),
-                                 name="oncoplot",
-                                 column_order = sort(colnames(oncomat.plot)),
-                                 show_pct = F,
-                                 right_annotation = right_ha,
-                                 row_split=split_idx,
-                                 row_title = NULL,
-                                 bottom_annotation = myanno,
-                                 top_annotation = top_ha,
-                                 left_annotation = left_ha,
-                                 show_column_names = show_sample_names,
-                                 column_names_gp = gpar(fontsize = 20,fontface = 2),
-                                 column_names_rot = 0,
-                                 alter_fun_is_vectorized = T,
-                                 row_names_gp = gpar(fontsize = 14),
-                                 heatmap_legend_param = list(title = "Alterations",title_gp = gpar(fontsize = 16, fontface = 2),labels_gp = gpar(fontsize = 14)))#,
-
-  pdf(paste0("~/Downloads/TSO500-Oncoplot-1.pdf"),width = 14,height = 12)
-  #ComplexHeatmap::draw(g, show_annotation_legend = TRUE)
-  draw(onco_base_default, show_annotation_legend = TRUE)
-  dev.off()
-
-  if ( ! is.null(savename) ) {
-    # save_name <- paste0(out_dir,"/oncoplot.",cohort_freq_thresh,".pdf")
-    # browser()
-    anno_height=ifelse(!is.null(clin_data), min(c(4, 0.5*ncol(clin_data))), 0)
-    onco_height=max(round(0.1*nrow(oncomat.plot),0),4) + anno_height
-    # onco_width=onco_height*0.75 + anno_height*1.2
-    onco_width=ncol(oncomat.plot)*0.01 + anno_height*1.2
-    pdf(file = savename,height=onco_height,width=onco_width)
-    draw(onco_base_default)
-    dev.off()
-  }
-
-  ### Return the oncoplot (if function is pointed to a variable)
-  invisible(onco_base_default)
+### Set the height of the plot based on number of genes
+onco_height=NULL
+if (is.null(onco_height)) {
+  onco_height=max(round(0.2*nrow(oncomat.plot),0),5)
 }
 
-
-### Define colors for mutation types
-# mutation_colors <- c(Nonsense_Mutation="#ad7aff",Missense_Mutation="#377EB8",Frame_Shift_Del="#4DAF4A",
-#                      In_Frame_Ins="#ff008c",Splice_Site="#FF7F00",Multi_Hit="#FFFF33",Frame_Shift_Ins="#A65628",
-#                      In_Frame_Del="#f781bf",Translation_Start_Site="#400085",Nonstop_Mutation="#b68dfc",
-#                      Amp="green2",Del="darkred",
-#                      no_variants="#d6d6d6", Pathogenic="black",VUS="grey50")
+### Make the mutation type names prettier by removing the underscore
+# my_mut_col <- mutation_colors
 # names(mutation_colors) <- gsub("_"," ",names(mutation_colors))
-mutation_colors <- c("Splicing_UTR5"="#ad7aff",Missense_Mutation="black",SNV="#377EB8","FS_Substitution"="#4DAF4A","Non_FS_Substitution"="#ff008c",Splicing="#FF7F00",Stopgain="#A65628",Multi_Hit="#FFFF33",Duplication="#5abad8",Del="darkred",no_variants="#d6d6d6", Pathogenic="black",VUS="grey50")
-names(mutation_colors) <- gsub("_"," ",names(mutation_colors))
+oncomat.plot <- gsub("_"," ",oncomat.plot)
+
+myanno=NULL
+if (!is.null(clin_data)) {
+  # browser()
+  anno_data <- data.frame(clin_data[match(colnames(oncomat.plot), clin_data$Tumor_Sample_Barcode),],stringsAsFactors = F)
+  row.names(anno_data) <- anno_data$Tumor_Sample_Barcode
+  anno_data <- anno_data[,!colnames(anno_data) %in% "Tumor_Sample_Barcode", drop=F]
+  if (ncol(anno_data) > 0) {
+    ###Make changes in the text for the annotation
+    colnames(anno_data)<-c("IG Gene\nRearrangement","BCL2 rearrangement\nby FISH")
+    myanno <- HeatmapAnnotation(df=anno_data,col = list("IG Gene\nRearrangement"=clin_data_colors$IG_Gene_Rearr,"BCL2 rearrangement\nby FISH"=clin_data_colors$BCL2),
+                                simple_anno_size = unit(10, "mm"),
+                                annotation_name_gp =  gpar(fontsize = 12,fontface = 2),
+                                annotation_legend_param=list(labels_gp = gpar(fontsize = 14),title_gp = gpar(fontsize = 16, fontface = 2),
+                                                             nrow = 4,
+                                                             legend_direction = "vertical"))
+  }
+}
+
+## Show total burden for top annotation
+variant_type_data <- data.frame(maf.filtered@variant.classification.summary)
+rownames(variant_type_data) <- variant_type_data$Tumor_Sample_Barcode
+colnames(variant_type_data) <- gsub("_"," ",colnames(variant_type_data))
+#variant_type_data <- variant_type_data[,c(-1,-ncol(variant_type_data))]
+variant_type_data <- variant_type_data[,!names(variant_type_data)%in%c("Tumor Sample Barcode","total","CNV total")]
+variant_type_data <- variant_type_data[match(colnames(oncomat.plot), rownames(variant_type_data)),
+                                       rev(order(colSums(variant_type_data)))]
+# browser()
+var_anno_colors <- mutation_colors[match(colnames(variant_type_data), names(mutation_colors))]
+###Make changes in the text/data for the top mutation histogram
+# top_ha = HeatmapAnnotation("# of Mutations" = anno_barplot(variant_type_data, gp = gpar(fill = var_anno_colors), border = F,rot=90,height = unit(4, "cm")),
+#                            #"Samples" = anno_text(sort(colnames(oncomat.plot)),rot=0),
+#                            annotation_name_side = "left",annotation_name_gp = gpar(fontsize = 12),gap=unit(1,"mm"))
+top_ha = HeatmapAnnotation("TMB (Mut/MB)" = anno_barplot(f$TMB[as.numeric(rownames(variant_type_data))], gp = gpar(fill = "mediumorchid4"), border = F,rot=90,height = unit(4, "cm")),
+                           #"Samples" = anno_text(sort(colnames(oncomat.plot)),rot=0),
+                           annotation_name_side = "left",annotation_name_gp = gpar(fontsize = 12),gap=unit(1,"mm"))
+
+# browser()
+
+pct_anno <- paste0(prettyNum(frac_mut$frac_mut[match(onco_genes, frac_mut$Hugo_Symbol)]*100,digits=1),"%")
+# OG_TSG_DF1<-data.frame(Gene=onco_genes)
+# OG_TSG_DF <- merge(OG_TSG_DF1,pathdbDF,by="Gene",all.x=TRUE)
+# OG_TSG_DF$Pathway[is.na(OG_TSG_DF$Pathway)]<-"NA"
+# OG_TSG_DF$OG_TSG[is.na(OG_TSG_DF$OG_TSG)]<-"NA"
+# oncogene_anno <- paste0(OG_TSG_DF$OG_TSG[match(onco_genes, OG_TSG_DF$Gene)])
+#left_ha = rowAnnotation("Oncogene"=anno_text(oncogene_anno,gp = gpar(fontsize = 12)),"Cohort Pct"=anno_text(pct_anno,gp = gpar(fontsize = 12)), show_annotation_name=F,gap=unit(1,"mm"))
+right_ha = rowAnnotation("% Mutated Sample"=anno_text(pct_anno,gp = gpar(fontsize = 14)), show_annotation_name=TRUE,gap=unit(1,"mm"))
+#row.names(oncomat.plot)<-paste0(row.names(oncomat.plot)," (",pct_anno,")")
+left_ha = rowAnnotation("Pathways"=anno_text(genes_for_oncoplot$reason1,gp = gpar(fontsize = 12),just = "left"), show_annotation_name=TRUE)
+#pathwayAnnotation <- rowAnnotation(month = anno_text(month.name[1:10], just = "center",location = unit(0.5, "npc"), show_name = TRUE),annotation_name_rot = 0)
+
+# print(oncomat.plot)
+### Make the oncoplot
+# alter_fun$Deletion<-function(x, y, w, h) {
+#   grid.rect(x, y, w-unit(0.25, "mm"), h*0.33,
+#             gp = gpar(fill = mutation_colors["Del"], col = NA))
+# }
+# alter_fun$Amplification<-function(x, y, w, h) {
+#   grid.rect(x, y, w-unit(0.25, "mm"), h*0.33,
+#             gp = gpar(fill = mutation_colors["Amp"], col = NA))
+# }
+onco_base_default <- oncoPrint(oncomat.plot, alter_fun = alter_fun, col=mutation_colors, row_order=1:nrow(oncomat.plot),
+                               name="oncoplot",
+                               column_order = sort(colnames(oncomat.plot)),
+                               show_pct = F,
+                               right_annotation = right_ha,
+                               row_split=split_idx,
+                               row_title = NULL,
+                               bottom_annotation = myanno,
+                               top_annotation = top_ha,
+                               left_annotation = left_ha,
+                               show_column_names = TRUE,
+                               column_names_gp = gpar(fontsize = 20,fontface = 2),
+                               column_names_rot = 0,
+                               alter_fun_is_vectorized = T,
+                               row_names_gp = gpar(fontsize = 14),
+                               heatmap_legend_param = list(title = "Alterations",title_gp = gpar(fontsize = 16, fontface = 2),labels_gp = gpar(fontsize = 14)))#,
+
+pdf(paste0("~/Downloads/TSO500-Oncoplot-test.pdf"),width = 14,height = 12)
+#ComplexHeatmap::draw(g, show_annotation_legend = TRUE)
+draw(onco_base_default, show_annotation_legend = TRUE)
+dev.off()
+
+# dataForCbioportal<-data.frame(Sample_ID=piMap[snvs$Patient.ID],Cancer_Type=rep("PCFCL",nrow(snvs)),Chromosome=snvs$Chr,Start_Position=snvs$Start,End_Position=snvs$End,Reference_Allele=snvs$Ref,Variant_Allele=snvs$Alt)
+# write.table(dataForCbioportal,"~/Downloads/landscape.cbioportal.tsv",sep = "\t",row.names = FALSE,col.names = TRUE,quote = F)
+
+# custom.snv.data <- data.frame(Gene = snvs$Gene,Sample_name = snvs$Patient.ID,CN = snvs$Exonic.function,stringsAsFactors = FALSE)
+# custom.snv.data$CN[custom.snv.data$CN == "(splicing;UTR5)"]<-"Splicing_UTR5"
+# custom.snv.data$CN[custom.snv.data$CN == "(splicing)"]<-"Splicing"
+# custom.snv.data$CN[custom.snv.data$CN == "FS substitution"]<-"FS_Substitution"
+# custom.snv.data$CN[custom.snv.data$CN == "nonFS substitution"]<-"Non_FS_Substitution"
+# custom.snv.data$CN[custom.snv.data$CN == "stopgain"]<-"Stopgain"
+
+# custom.cn.data <- custom.cnv.data
+# custom.cn.data$Sample_name <-piMap[custom.cn.data$Sample_name]
 
 ### List defining functions for color and shape of cells in oncoplot
 alter_fun = list(
@@ -415,5 +337,3 @@ alter_fun = list(
               gp = gpar(fill = mutation_colors["Stopgain"], col = NA))
   }
 )
-
-
