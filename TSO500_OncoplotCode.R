@@ -197,14 +197,20 @@ onco_base_default <- oncoPrint(oncomat.plot,get_type = function(x) strsplit(x, "
   #print(v)
   n = sum(v)  # how many alterations for current gene in current sample
   h = h*0.9
+  #w = w*0.9
+  ##For Background
+  grid.rect(x, y, w-unit(0.5, "mm"), h,gp = gpar(fill = "#CCCCCC", col = NA))
   # use `names(which(v))` to correctly map between `v` and `col`
-  if(n) {grid.rect(x, y - h*0.5 + 1:n/n*h, w*0.95, 1/n*h,
-                  gp = gpar(fill = col[names(which(v))], col = NA), just = "top")}
-  else
+  if(v["Duplication"])
   {
-      grid.rect(x, y, w-unit(0.5, "mm"), h,
-      gp = gpar(fill = "#CCCCCC", col = NA))
-  }
+    grid.rect(x, y, w-unit(0.25, "mm"), h*0.33,gp = gpar(fill = mutation_colors["Duplication"], col = NA))
+  }else if(n) {
+    grid.rect(x, y - h*0.5 + 1:n/n*h, w*0.95, 1/n*h,gp = gpar(fill = col[names(which(v))], col = NA), just = "top")}
+    #grid.rect(x + w - 1:n/n*w, y, 1/n*w, h*0.95,gp = gpar(fill = col[names(which(v))], col = NA), just = "top")}
+  # else
+  # {
+  #     grid.rect(x, y, w-unit(0.5, "mm"), h,gp = gpar(fill = "#CCCCCC", col = NA))
+  # }
 },
                                col=mutation_colors,
                                row_order=1:nrow(oncomat.plot),
