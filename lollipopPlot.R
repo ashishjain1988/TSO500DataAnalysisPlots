@@ -367,7 +367,14 @@ lollipopPlot = function(maf, gene = NULL, AACol = NULL, labelPos = NULL, labPosS
   axis(side = 2, at = lim.pos, labels = lim.lab, lwd = 1.2, font = 1, las = 2,
        cex.axis = axisTextSize[2])
   #mtext(text = "# Mutations", side = 2, line = 1.5, font = 1)
-  segments(x0 = prot.snp.sumamry[,pos2], y0 = 0.8, x1 = prot.snp.sumamry[,pos2], y1 = prot.snp.sumamry[,count2-0.03], lwd = 1.2, col = "gray70")
+  print(dim(prot.snp.sumamry))
+  oncoKBAnnot<-mut[,ONCOKBAnnot]
+  print(oncoKBAnnot)
+  print(class(oncoKBAnnot))
+  #colorScheme<-"gray70"
+  colorScheme <- unlist(lapply(oncoKBAnnot,function(x){if(x==TRUE) "black" else "gray70"}))
+  print(colorScheme)
+  segments(x0 = prot.snp.sumamry[,pos2], y0 = 0.8, x1 = prot.snp.sumamry[,pos2], y1 = prot.snp.sumamry[,count2-0.03], lwd = 1.2, col = colorScheme)
   point_cols = col[as.character(prot.snp.sumamry$Variant_Classification)]
   points(x = prot.snp.sumamry[,pos2], y = prot.snp.sumamry[,count2], col = point_cols, pch = 16, cex = pointSize)
 
@@ -397,10 +404,42 @@ lollipopPlot = function(maf, gene = NULL, AACol = NULL, labelPos = NULL, labPosS
     text(y = 0.5, x = prot$pos, labels = prot$Label, font = 3, cex = domainLabelSize)
   }
 
+  print(labDat)
   if(!is.null(labelPos)){
     #prot.snp.sumamry = repelPoints(dat = prot.snp.sumamry, protLen = len, clustSize = 5)
-    text(x = labDat[,pos2], y = labDat[,count2+0.45], labels = labDat[,conv],
+    if(geneID == "SOCS1")
+    {
+      yAxis<-labDat[,count2+0.45]
+      yAxis[lapply(1:length(yAxis), "%%", 2) == 0]<- yAxis[lapply(1:length(yAxis), "%%", 2) == 0] + 0.3
+      #yAxis[3]<-yAxis[3]-0.4
+      xAxis<-labDat[,pos2]-4
+      xAxis[3]<-xAxis[3]+2
+      xAxis[1]<-xAxis[1]-4
+      text(x = xAxis, y = yAxis, labels = labDat[,conv],
+           font = 1, srt = labPosAngle, cex = labPosSize, adj = 0.1)
+    }
+    else if(geneID == "TNFRSF14")
+    {
+      yAxis<-labDat[,count2+0.45]
+      yAxis[lapply(1:length(yAxis), "%%", 2) == 0]<- yAxis[lapply(1:length(yAxis), "%%", 2) == 0] + 0.2
+      text(x = labDat[,pos2]-3, y = yAxis, labels = labDat[,conv],
+           font = 1, srt = labPosAngle, cex = labPosSize, adj = 0.1)
+    }
+    else if(geneID == "B2M")
+    {
+      text(x = labDat[,pos2]-1, y = labDat[,count2+0.45], labels = labDat[,conv],
+           font = 1, srt = labPosAngle, cex = labPosSize, adj = 0.1)
+    }
+    else if(geneID == "XIAP" | geneID == "CARD11" | geneID == "PTPRD")
+    {
+      text(x = labDat[,pos2]-1, y = labDat[,count2+0.45], labels = labDat[,conv],
+           font = 1, srt = labPosAngle, cex = labPosSize, adj = 0.1)
+    }
+    else
+    {
+    text(x = labDat[,pos2]-3, y = labDat[,count2+0.45], labels = labDat[,conv],
          font = 1, srt = labPosAngle, cex = labPosSize, adj = 0.1)
+    }
   }
 
   if(showLegend){
